@@ -1,0 +1,9 @@
+{
+  "name": "yuegu777/moon_yaml",
+  "version": "0.1.0",
+  "description": "A YAML 1.2 Core Schema parser and emitter for MoonBit.",
+  "readme": "README.md",
+  "license": "MIT",
+  "keywords": ["yaml", "parser", "yaml12", "config", "serialization"],
+  "dependencies": {}
+}
