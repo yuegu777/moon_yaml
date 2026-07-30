@@ -937,3 +937,60 @@ test "implicit_document" {
         Err(e) => fail!("解析失败")
     }
 }
+
+///|
+/// 测试合并键 << 基本用法
+test "merge_key_basic" {
+    let loader = @yaml.YamlLoader::new()
+    let input = "defaults: &defaults\n  adapter: postgres\n  host: localhost\ndevelopment:\n  <<: *defaults\n  database: dev_db"
+    match loader.load_single(input) {
+        Ok(@yaml.Object(obj)) => {
+            match obj.get("development") {
+                Some(@yaml.Object(dev)) => {
+                    // 应该继承 defaults 的 adapter 和 host
+                    match dev.get("adapter") {
+                        Some(@yaml.String("postgres")) => ()
+                        _ => fail!("development 应继承 adapter=postgres")
+                    }
+                    match dev.get("host") {
+                        Some(@yaml.String("localhost")) => ()
+                        _ => fail!("development 应继承 host=localhost")
+                    }
+                    match dev.get("database") {
+                        Some(@yaml.String("dev_db")) => ()
+                        _ => fail!("development 应有 database=dev_db")
+                    }
+                }
+                _ => fail!("development 应为 Object")
+            }
+        }
+        Ok(_) => fail!("预期 Object")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试合并键不覆盖已有键
+test "merge_key_no_override" {
+    let loader = @yaml.YamlLoader::new()
+    let input = "base: &base\n  a: 1\n  b: 2\nderived:\n  <<: *base\n  b: 99"
+    match loader.load_single(input) {
+        Ok(@yaml.Object(obj)) => {
+            match obj.get("derived") {
+                Some(@yaml.Object(d)) => {
+                    match d.get("a") {
+                        Some(@yaml.Int(1)) => ()
+                        _ => fail!("a 应为 1")
+                    }
+                    match d.get("b") {
+                        Some(@yaml.Int(99)) => ()
+                        _ => fail!("b 应为 99 (不被覆盖)")
+                    }
+                }
+                _ => fail!("derived 应为 Object")
+            }
+        }
+        Ok(_) => fail!("预期 Object")
+        Err(e) => fail!("解析失败")
+    }
+}

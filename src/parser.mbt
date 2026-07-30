@@ -225,6 +225,32 @@ fn Parser::parse_alias(self: Parser) -> Result[YamlValue, YamlError] {
 }
 
 ///|
+/// 应用合并键 <<: 将源映射合并到目标映射(不覆盖已有键)
+fn Parser::apply_merge_key(self: Parser, target: Map[String, YamlValue], value: YamlValue) -> Unit {
+    match value {
+        Object(source) => {
+            // 单个映射: 合并所有不存在的键
+            source.each(fn(k, v) {
+                match target.get(k) {
+                    None => target.set(k, v)
+                    Some(_) => () // 已存在, 不覆盖
+                }
+            })
+        }
+        Array(items) => {
+            // 序列: 依次合并每个项(必须是映射)
+            let mut i = 0
+            while i < items.length() {
+                self.apply_merge_key(target, items[i])
+                i = i + 1
+            }
+        }
+        _ => ()
+        // 非映射/序列类型忽略(不符合YAML规范但容错处理)
+    }
+}
+
+///|
 /// 解析序列(BlockEntry 开始)
 /// base_indent: 父级缩进; entry_col: 当前序列项 '-' 的列号
 fn Parser::parse_sequence(self: Parser, base_indent: Int, entry_col: Int) -> Result[YamlValue, YamlError] {
@@ -311,7 +337,14 @@ fn Parser::parse_mapping_value(self: Parser, base_indent: Int, key_col: Int) -> 
                         self.skip_newlines()
                         // 值的基准缩进是 key_col
                         match self.parse_value(key_col) {
-                            Ok(value) => mapping.set(key, value)
+                            Ok(value) => {
+                                if key == "<<" {
+                                    // 合并键: 将引用的映射合并到当前映射
+                                    self.apply_merge_key(mapping, value)
+                                } else {
+                                    mapping.set(key, value)
+                                }
+                            }
                             Err(e) => {
                                 self.depth.val = self.depth.val - 1
                                 return Err(e)
@@ -507,7 +540,13 @@ fn Parser::parse_flow_mapping(self: Parser) -> Result[YamlValue, YamlError] {
                 self.skip_newlines()
 
                 match self.parse_flow_value() {
-                    Ok(value) => mapping.set(key, value)
+                    Ok(value) => {
+                        if key == "<<" {
+                            self.apply_merge_key(mapping, value)
+                        } else {
+                            mapping.set(key, value)
+                        }
+                    }
                     Err(e) => {
                         self.depth.val = self.depth.val - 1
                         return Err(e)
