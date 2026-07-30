@@ -81,6 +81,183 @@ test "parse_mapping" {
 }
 
 ///|
+/// 测试嵌套对象序列化往返
+test "roundtrip_nested_object" {
+    let loader = @yaml.YamlLoader::new()
+    let emitter = @yaml.YamlEmitter::new()
+    let input = "server:\n  host: localhost\n  port: 8080\ndatabase:\n  name: mydb"
+    match loader.load_single(input) {
+        Ok(doc) => {
+            let output = emitter.emit(doc)
+            match loader.load_single(output) {
+                Ok(doc2) => {
+                    match (doc, doc2) {
+                        (@yaml.Object(a), @yaml.Object(b)) => {
+                            match (a.get("server"), b.get("server")) {
+                                (Some(@yaml.Object(s1)), Some(@yaml.Object(s2))) => {
+                                    match (s1.get("host"), s2.get("host")) {
+                                        (Some(@yaml.String(h1)), Some(@yaml.String(h2))) => {
+                                            if h1 != h2 { fail!("host 往返不一致") }
+                                        }
+                                        _ => fail!("host 字段缺失")
+                                    }
+                                }
+                                _ => fail!("server 字段缺失或类型错误")
+                            }
+                        }
+                        _ => fail!("往返后类型不一致")
+                    }
+                }
+                Err(_) => fail!("往返解析失败")
+            }
+        }
+        Err(_) => fail!("初始解析失败")
+    }
+}
+
+///|
+/// 测试数组序列化往返
+test "roundtrip_array" {
+    let loader = @yaml.YamlLoader::new()
+    let emitter = @yaml.YamlEmitter::new()
+    let input = "items:\n  - name: a\n    value: 1\n  - name: b\n    value: 2"
+    match loader.load_single(input) {
+        Ok(doc) => {
+            let output = emitter.emit(doc)
+            match loader.load_single(output) {
+                Ok(doc2) => {
+                    match (doc, doc2) {
+                        (@yaml.Object(a), @yaml.Object(b)) => {
+                            match (a.get("items"), b.get("items")) {
+                                (Some(@yaml.Array(arr1)), Some(@yaml.Array(arr2))) => {
+                                    if arr1.length() != arr2.length() {
+                                        fail!("数组长度不一致")
+                                    }
+                                }
+                                _ => fail!("items 字段缺失或类型错误")
+                            }
+                        }
+                        _ => fail!("往返后类型不一致")
+                    }
+                }
+                Err(_) => fail!("往返解析失败")
+            }
+        }
+        Err(_) => fail!("初始解析失败")
+    }
+}
+
+///|
+/// 测试空集合序列化
+test "emit_empty_collections" {
+    let emitter = @yaml.YamlEmitter::new()
+    let empty_arr = @yaml.Array([])
+    let empty_obj = @yaml.Object(Map::new())
+    let arr_str = emitter.emit(empty_arr)
+    let obj_str = emitter.emit(empty_obj)
+    if not(arr_str.contains("[]")) {
+        fail!("空数组应序列化为 []")
+    }
+    if not(obj_str.contains("{}")) {
+        fail!("空对象应序列化为 {}")
+    }
+}
+
+///|
+/// 测试多文档序列化
+test "emit_multi_documents" {
+    let emitter = @yaml.YamlEmitter::new()
+    let docs = [
+        @yaml.Object(Map::from_array([("doc", @yaml.Int(1))])),
+        @yaml.Object(Map::from_array([("doc", @yaml.Int(2))]))
+    ]
+    let output = emitter.emit_documents(docs)
+    if not(output.contains("---")) {
+        fail!("多文档应包含 --- 分隔符")
+    }
+}
+
+///|
+/// 测试布尔值序列化
+test "emit_booleans" {
+    let emitter = @yaml.YamlEmitter::new()
+    let t = emitter.emit(@yaml.Bool(true))
+    let f = emitter.emit(@yaml.Bool(false))
+    if t != "true" { fail!("true 序列化为: " + t) }
+    if f != "false" { fail!("false 序列化为: " + f) }
+}
+
+///|
+/// 测试 Null 序列化
+test "emit_null" {
+    let emitter = @yaml.YamlEmitter::new()
+    let s = emitter.emit(@yaml.Null)
+    if s != "null" { fail!("null 序列化为: " + s) }
+}
+
+///|
+/// 综合测试: 真实配置文件场景往返
+test "comprehensive_config_roundtrip" {
+    let loader = @yaml.YamlLoader::new()
+    let emitter = @yaml.YamlEmitter::new()
+    let input = "name: my-app\nversion: 1.0\nserver:\n  host: 0.0.0.0\n  port: 8080\n  debug: false\nfeatures:\n  - auth\n  - logging\n  - metrics"
+    match loader.load_single(input) {
+        Ok(doc) => {
+            let output = emitter.emit(doc)
+            match loader.load_single(output) {
+                Ok(doc2) => {
+                    // 验证顶层字段
+                    match (doc, doc2) {
+                        (@yaml.Object(a), @yaml.Object(b)) => {
+                            // name
+                            match (a.get("name"), b.get("name")) {
+                                (Some(@yaml.String(n1)), Some(@yaml.String(n2))) => {
+                                    if n1 != n2 { fail!("name 不一致") }
+                                }
+                                _ => fail!("name 字段错误")
+                            }
+                            // server.port
+                            match (a.get("server"), b.get("server")) {
+                                (Some(@yaml.Object(s1)), Some(@yaml.Object(s2))) => {
+                                    match (s1.get("port"), s2.get("port")) {
+                                        (Some(@yaml.Int(p1)), Some(@yaml.Int(p2))) => {
+                                            if p1 != p2 { fail!("port 不一致") }
+                                        }
+                                        _ => fail!("port 字段错误")
+                                    }
+                                    match (s1.get("debug"), s2.get("debug")) {
+                                        (Some(@yaml.Bool(d1)), Some(@yaml.Bool(d2))) => {
+                                            if d1 != d2 { fail!("debug 不一致") }
+                                        }
+                                        _ => fail!("debug 字段错误")
+                                    }
+                                }
+                                _ => fail!("server 字段错误")
+                            }
+                            // features 数组长度
+                            match (a.get("features"), b.get("features")) {
+                                (Some(@yaml.Array(f1)), Some(@yaml.Array(f2))) => {
+                                    if f1.length() != f2.length() {
+                                        fail!("features 数组长度不一致")
+                                    }
+                                    if f1.length() != 3 {
+                                        fail!("features 应有 3 个元素")
+                                    }
+                                }
+                                _ => fail!("features 字段错误")
+                            }
+                        }
+                        _ => fail!("根类型不是 Object")
+                    }
+                }
+                Err(_) => fail!("往返解析失败")
+            }
+        }
+        Err(_) => fail!("初始解析失败")
+    }
+}
+
+///|
 /// 测试基础 sequence 解析
 test "parse_sequence" {
     let loader = @yaml.YamlLoader::new()
