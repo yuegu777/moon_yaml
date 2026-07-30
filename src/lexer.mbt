@@ -140,6 +140,35 @@ fn Lexer::scan(self: Lexer) -> Result[Array[TokenWithPos], YamlError] {
                 }
                 Err(e) => return Err(e)
             }
+        } else if c == '|' && self.is_block_scalar_indicator() {
+            // 字面量块标量 (|) - 读取整个块内容
+            self.advance()
+            let chomp = self.skip_block_indicators()
+            self.skip_to_eol()
+            match self.read_block_content(chomp, true) {
+                Ok(content) => {
+                    // 块标量作为值出现(在冒号后), 直接作为Scalar
+                    tokens.push({
+                        token: Scalar(content),
+                        pos: { line: start_line, col: start_col }
+                    })
+                }
+                Err(e) => return Err(e)
+            }
+        } else if c == '>' && self.is_block_scalar_indicator() {
+            // 折叠块标量 (>) - 读取整个块内容
+            self.advance()
+            let chomp = self.skip_block_indicators()
+            self.skip_to_eol()
+            match self.read_block_content(chomp, false) {
+                Ok(content) => {
+                    tokens.push({
+                        token: Scalar(content),
+                        pos: { line: start_line, col: start_col }
+                    })
+                }
+                Err(e) => return Err(e)
+            }
         } else {
             match self.read_scalar() {
                 Ok(scalar) => {
@@ -411,4 +440,260 @@ fn Lexer::read_single_quoted(self: Lexer) -> Result[String, YamlError] {
         col=start_col,
         msg="单引号字符串未闭合"
     ))
+}
+
+///|
+/// 检查当前位置的 | 或 > 是否是块标量指示符
+/// (后面必须是行尾、空白+行尾、或数字/+-后接行尾)
+fn Lexer::is_block_scalar_indicator(self: Lexer) -> Bool {
+    let mut i = self.pos.val + 1
+    // 跳过可选的数字(缩进指示符)和 +/-(chomp指示符)
+    while i < self.len {
+        let c = self.chars[i]
+        if c >= '1' && c <= '9' {
+            i = i + 1
+        } else if c == '+' || c == '-' {
+            i = i + 1
+            break
+        } else {
+            break
+        }
+    }
+    // 后面必须是空白字符后接行尾, 或直接行尾
+    while i < self.len {
+        let c = self.chars[i]
+        if c == ' ' || c == '\t' {
+            i = i + 1
+        } else if c == '\n' || c == '\r' {
+            return true
+        } else {
+            return false
+        }
+    }
+    // 文件末尾也算
+    true
+}
+
+///|
+/// 跳过块标量的缩进/chomp指示符(数字和+/-)
+/// 返回 chomp 模式: 0=clip(默认), 1=keep(+), -1=strip(-)
+fn Lexer::skip_block_indicators(self: Lexer) -> Int {
+    let mut chomp = 0 // 0=clip, 1=keep, -1=strip
+    while self.pos.val < self.len {
+        let c = self.current_char()
+        if c >= '1' && c <= '9' {
+            self.advance()
+        } else if c == '+' {
+            chomp = 1
+            self.advance()
+            break
+        } else if c == '-' {
+            chomp = -1
+            self.advance()
+            break
+        } else {
+            break
+        }
+    }
+    chomp
+}
+
+///|
+/// 跳过到行尾(包括换行符)
+fn Lexer::skip_to_eol(self: Lexer) -> Unit {
+    while self.pos.val < self.len {
+        let c = self.current_char()
+        if c == '\n' {
+            self.advance()
+            return
+        } else if c == '\r' {
+            self.advance()
+            if self.pos.val < self.len && self.current_char() == '\n' {
+                self.advance()
+            }
+            return
+        }
+        self.advance()
+    }
+}
+
+///|
+/// 读取一行(从当前位置到换行符), 返回内容和是否遇到换行
+fn Lexer::read_line_raw(self: Lexer) -> String {
+    let line_chars: Array[Char] = []
+    while self.pos.val < self.len {
+        let c = self.current_char()
+        if c == '\n' {
+            self.advance()
+            break
+        } else if c == '\r' {
+            self.advance()
+            if self.pos.val < self.len && self.current_char() == '\n' {
+                self.advance()
+            }
+            break
+        }
+        line_chars.push(c)
+        self.advance()
+    }
+    String::from_array(line_chars)
+}
+
+///|
+/// 检查当前位置是否在文件末尾或遇到更少缩进的内容
+fn Lexer::peek_line_indent(self: Lexer) -> Int {
+    let mut i = self.pos.val
+    let mut indent = 0
+    while i < self.len {
+        let c = self.chars[i]
+        if c == ' ' {
+            indent = indent + 1
+            i = i + 1
+        } else if c == '\t' {
+            indent = indent + 1
+            i = i + 1
+        } else {
+            break
+        }
+    }
+    // 如果行是空的(只有换行), 返回 -1
+    if i < self.len && (self.chars[i] == '\n' || self.chars[i] == '\r') {
+        return -1
+    }
+    // 如果到文件末尾, 返回 -2
+    if i >= self.len {
+        return -2
+    }
+    indent
+}
+
+///|
+/// 读取块标量内容
+/// chomp: 0=clip(默认), 1=keep(+), -1=strip(-)
+/// is_literal: true=|(字面量), false=> (折叠)
+fn Lexer::read_block_content(self: Lexer, chomp: Int, is_literal: Bool) -> Result[String, YamlError] {
+    let content_lines: Array[String] = []
+    let mut content_indent = -1
+
+    // 首先确定内容的缩进级别(从第一个非空行开始)
+    // 跳过前导空行
+    while self.pos.val < self.len {
+        let indent = self.peek_line_indent()
+        if indent == -2 {
+            // 文件末尾
+            return Ok("")
+        }
+        if indent == -1 {
+            // 空行, 读取并跳过
+            let _ = self.read_line_raw()
+            content_lines.push("")
+        } else {
+            if content_indent == -1 {
+                content_indent = indent
+            }
+            break
+        }
+    }
+
+    if content_indent == -1 {
+        return Ok("")
+    }
+
+    // 现在逐行读取内容
+    let mut trailing_newlines = 0
+    while self.pos.val < self.len {
+        let saved_pos = self.pos.val
+        let saved_line = self.line.val
+        let saved_col = self.col.val
+
+        let indent = self.peek_line_indent()
+
+        if indent == -2 {
+            // 文件末尾
+            break
+        }
+
+        if indent >= 0 && indent < content_indent {
+            // 缩进小于内容缩进, 块结束
+            // 回退位置
+            self.pos.val = saved_pos
+            self.line.val = saved_line
+            self.col.val = saved_col
+            break
+        }
+
+        // 读取这一行
+        let raw_line = self.read_line_raw()
+
+        if indent == -1 {
+            // 空行
+            content_lines.push("")
+            trailing_newlines = trailing_newlines + 1
+        } else {
+            // 去掉前导 content_indent 个空格
+            let line_after_indent = if raw_line.length() > content_indent {
+                raw_line.substring(start=content_indent)
+            } else {
+                ""
+            }
+            content_lines.push(line_after_indent)
+            trailing_newlines = 0
+        }
+    }
+
+    // 处理 trailing newlines 和 chomp
+    // 先移除末尾空行, 根据chomp决定保留多少
+    while content_lines.length() > 0 && content_lines[content_lines.length() - 1] == "" {
+        let _ = content_lines.pop()
+    }
+
+    // 根据 is_literal 和 chomp 拼接结果
+    let result = if is_literal {
+        // 字面量: 行之间用 \n 连接
+        let mut s = ""
+        let mut i = 0
+        while i < content_lines.length() {
+            if i > 0 {
+                s = s + "\n"
+            }
+            s = s + content_lines[i]
+            i = i + 1
+        }
+        // chomp处理
+        if chomp >= 0 {
+            // clip 或 keep: 末尾加换行
+            s = s + "\n"
+        }
+        s
+    } else {
+        // 折叠: 非空行之间的换行变成空格, 空行表示段落分隔(保留换行)
+        let mut s = ""
+        let mut prev_empty = false
+        let mut i = 0
+        while i < content_lines.length() {
+            let line = content_lines[i]
+            if line == "" {
+                // 空行表示段落分隔
+                if s.length() > 0 && not(s.has_suffix("\n")) {
+                    s = s + "\n"
+                }
+                s = s + "\n"
+                prev_empty = true
+            } else {
+                if s.length() > 0 && not(prev_empty) && not(s.has_suffix("\n")) {
+                    s = s + " "
+                }
+                s = s + line
+                prev_empty = false
+            }
+            i = i + 1
+        }
+        // chomp处理
+        if chomp >= 0 {
+            s = s + "\n"
+        }
+        s
+    }
+
+    Ok(result)
 }

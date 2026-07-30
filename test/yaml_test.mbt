@@ -517,3 +517,67 @@ test "quoted_in_mapping" {
         Err(e) => fail!("解析失败")
     }
 }
+
+///|
+/// 测试字面量块标量(|) - 保留换行符
+test "block_literal" {
+    let loader = @yaml.YamlLoader::new()
+    let input = "key: |\n  line1\n  line2\n  line3"
+    match loader.load_single(input) {
+        Ok(@yaml.Object(obj)) => {
+            match obj.get("key") {
+                Some(@yaml.String(s)) => {
+                    if not(s.contains("line1\nline2\nline3")) {
+                        fail!("字面量块标量应保留换行符")
+                    }
+                }
+                _ => fail!("key 应为 String")
+            }
+        }
+        Ok(_) => fail!("预期 Object")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试折叠块标量(>) - 换行变成空格
+test "block_folded" {
+    let loader = @yaml.YamlLoader::new()
+    let input = "key: >\n  hello\n  world"
+    match loader.load_single(input) {
+        Ok(@yaml.Object(obj)) => {
+            match obj.get("key") {
+                Some(@yaml.String(s)) => {
+                    // 折叠模式: 行之间换行变成空格
+                    if not(s.contains("hello world")) {
+                        fail!("折叠块标量应将换行转为空格")
+                    }
+                }
+                _ => fail!("key 应为 String")
+            }
+        }
+        Ok(_) => fail!("预期 Object")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试块标量后接其他key
+test "block_then_other_key" {
+    let loader = @yaml.YamlLoader::new()
+    let input = "desc: |\n  first line\n  second line\nname: test"
+    match loader.load_single(input) {
+        Ok(@yaml.Object(obj)) => {
+            match obj.get("desc") {
+                Some(@yaml.String(_)) => ()
+                _ => fail!("desc 应为 String")
+            }
+            match obj.get("name") {
+                Some(@yaml.String("test")) => ()
+                _ => fail!("name 应为 String(test)")
+            }
+        }
+        Ok(_) => fail!("预期 Object")
+        Err(e) => fail!("解析失败")
+    }
+}
