@@ -50,6 +50,8 @@ pub enum Token {
     ValueIndicator
     BlockEntry
     Scalar(String)
+    DoubleQuoted(String)
+    SingleQuoted(String)
     NewLine
     Eof
 }

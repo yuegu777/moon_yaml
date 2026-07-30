@@ -393,3 +393,127 @@ test "parse_nested_null" {
         Err(e) => fail!("解析失败")
     }
 }
+
+///|
+/// 测试双引号字符串
+test "parse_double_quoted" {
+    let loader = @yaml.YamlLoader::new()
+    match loader.load_single("\"hello world\"") {
+        Ok(@yaml.String("hello world")) => ()
+        Ok(_) => fail!("预期 String(hello world)")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试双引号字符串转义序列
+test "parse_double_quoted_escape" {
+    let loader = @yaml.YamlLoader::new()
+    // 测试换行转义
+    match loader.load_single("\"line1\\nline2\"") {
+        Ok(@yaml.String(s)) => {
+            if not(s.contains("\n")) {
+                fail!("应包含换行符")
+            }
+        }
+        Ok(_) => fail!("预期 String")
+        Err(e) => fail!("解析失败")
+    }
+    // 测试制表符转义
+    match loader.load_single("\"col1\\tcol2\"") {
+        Ok(@yaml.String(s)) => {
+            if not(s.contains("\t")) {
+                fail!("应包含制表符")
+            }
+        }
+        Ok(_) => fail!("预期 String")
+        Err(e) => fail!("解析失败")
+    }
+    // 测试转义引号
+    match loader.load_single("\"say \\\"hello\\\"\"") {
+        Ok(@yaml.String(s)) => {
+            if not(s.contains("\"")) {
+                fail!("应包含转义引号")
+            }
+        }
+        Ok(_) => fail!("预期 String")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试单引号字符串
+test "parse_single_quoted" {
+    let loader = @yaml.YamlLoader::new()
+    match loader.load_single("'hello world'") {
+        Ok(@yaml.String("hello world")) => ()
+        Ok(_) => fail!("预期 String(hello world)")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试单引号字符串中的引号转义 ('')
+test "parse_single_quoted_escape" {
+    let loader = @yaml.YamlLoader::new()
+    match loader.load_single("'it''s ok'") {
+        Ok(@yaml.String(s)) => {
+            if s != "it's ok" {
+                fail!("预期 String(it's ok)")
+            }
+        }
+        Ok(_) => fail!("预期 String")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试单引号字符串不做类型推断(数字应为字符串)
+test "single_quoted_no_typing" {
+    let loader = @yaml.YamlLoader::new()
+    match loader.load_single("'42'") {
+        Ok(@yaml.String("42")) => ()
+        Ok(@yaml.Int(_)) => fail!("单引号数字应为字符串, 不是整数")
+        Ok(_) => fail!("预期 String(42)")
+        Err(e) => fail!("解析失败")
+    }
+    match loader.load_single("'true'") {
+        Ok(@yaml.String("true")) => ()
+        Ok(@yaml.Bool(_)) => fail!("单引号true应为字符串, 不是布尔值")
+        Ok(_) => fail!("预期 String(true)")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试双引号字符串不做类型推断
+test "double_quoted_no_typing" {
+    let loader = @yaml.YamlLoader::new()
+    match loader.load_single("\"3.14\"") {
+        Ok(@yaml.String("3.14")) => ()
+        Ok(@yaml.Double(_)) => fail!("双引号数字应为字符串, 不是浮点数")
+        Ok(_) => fail!("预期 String(3.14)")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试mapping中使用引号字符串作为key和value
+test "quoted_in_mapping" {
+    let loader = @yaml.YamlLoader::new()
+    let input = "\"first name\": \"John\"\n'last name': 'Doe'"
+    match loader.load_single(input) {
+        Ok(@yaml.Object(obj)) => {
+            match obj.get("first name") {
+                Some(@yaml.String("John")) => ()
+                _ => fail!("first name 字段不匹配")
+            }
+            match obj.get("last name") {
+                Some(@yaml.String("Doe")) => ()
+                _ => fail!("last name 字段不匹配")
+            }
+        }
+        Ok(_) => fail!("预期 Object")
+        Err(e) => fail!("解析失败")
+    }
+}

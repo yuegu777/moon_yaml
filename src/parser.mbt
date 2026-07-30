@@ -116,6 +116,8 @@ fn Parser::parse_value(self: Parser, base_indent: Int) -> Result[YamlValue, Yaml
             self.parse_mapping_value(base_indent, key_col)
         }
         Scalar(_) => self.parse_scalar_value()
+        DoubleQuoted(_) => self.parse_quoted_string()
+        SingleQuoted(_) => self.parse_quoted_string()
         DocumentEnd => {
             self.advance()
             Ok(Null)
@@ -268,6 +270,29 @@ fn Parser::parse_scalar_value(self: Parser) -> Result[YamlValue, YamlError] {
                 line=pos.line,
                 col=pos.col,
                 msg="预期标量值"
+            ))
+        }
+    }
+}
+
+///|
+/// 解析引号字符串(双引号/单引号, 始终返回 String, 不做类型推断)
+fn Parser::parse_quoted_string(self: Parser) -> Result[YamlValue, YamlError] {
+    match self.current_token() {
+        DoubleQuoted(s) => {
+            self.advance()
+            Ok(String(s))
+        }
+        SingleQuoted(s) => {
+            self.advance()
+            Ok(String(s))
+        }
+        _ => {
+            let pos = self.current_pos()
+            Err(ParseError(
+                line=pos.line,
+                col=pos.col,
+                msg="预期引号字符串"
             ))
         }
     }

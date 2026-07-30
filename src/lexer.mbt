@@ -80,6 +80,66 @@ fn Lexer::scan(self: Lexer) -> Result[Array[TokenWithPos], YamlError] {
             })
             self.advance()
             self.skip_spaces()
+        } else if c == '"' {
+            // 双引号字符串
+            match self.read_double_quoted() {
+                Ok(content) => {
+                    self.skip_spaces()
+                    if self.pos.val < self.len && self.current_char() == ':' {
+                        tokens.push({
+                            token: Key(content),
+                            pos: { line: start_line, col: start_col }
+                        })
+                        self.advance()
+                        if self.pos.val < self.len {
+                            let next_c = self.current_char()
+                            if next_c == ' ' || next_c == '\t' {
+                                self.skip_spaces()
+                            }
+                        }
+                        tokens.push({
+                            token: ValueIndicator,
+                            pos: { line: self.line.val, col: self.col.val }
+                        })
+                    } else {
+                        tokens.push({
+                            token: DoubleQuoted(content),
+                            pos: { line: start_line, col: start_col }
+                        })
+                    }
+                }
+                Err(e) => return Err(e)
+            }
+        } else if c == '\'' {
+            // 单引号字符串
+            match self.read_single_quoted() {
+                Ok(content) => {
+                    self.skip_spaces()
+                    if self.pos.val < self.len && self.current_char() == ':' {
+                        tokens.push({
+                            token: Key(content),
+                            pos: { line: start_line, col: start_col }
+                        })
+                        self.advance()
+                        if self.pos.val < self.len {
+                            let next_c = self.current_char()
+                            if next_c == ' ' || next_c == '\t' {
+                                self.skip_spaces()
+                            }
+                        }
+                        tokens.push({
+                            token: ValueIndicator,
+                            pos: { line: self.line.val, col: self.col.val }
+                        })
+                    } else {
+                        tokens.push({
+                            token: SingleQuoted(content),
+                            pos: { line: start_line, col: start_col }
+                        })
+                    }
+                }
+                Err(e) => return Err(e)
+            }
         } else {
             match self.read_scalar() {
                 Ok(scalar) => {
@@ -247,4 +307,108 @@ fn Lexer::read_scalar(self: Lexer) -> Result[String, YamlError] {
     }
 
     Ok(String::from_array(scalar_chars).trim_space().to_string())
+}
+
+///|
+/// 读取双引号字符串(支持转义序列)
+fn Lexer::read_double_quoted(self: Lexer) -> Result[String, YamlError] {
+    let start_line = self.line.val
+    let start_col = self.col.val
+    // 跳过开头的双引号
+    self.advance()
+    let content_chars: Array[Char] = []
+
+    while self.pos.val < self.len {
+        let c = self.current_char()
+        if c == '\\' {
+            // 转义序列
+            self.advance()
+            if self.pos.val >= self.len {
+                return Err(LexError(
+                    line=self.line.val,
+                    col=self.col.val,
+                    msg="双引号字符串未闭合"
+                ))
+            }
+            let esc = self.current_char()
+            match esc {
+                '"' => content_chars.push('"')
+                '\\' => content_chars.push('\\')
+                '/' => content_chars.push('/')
+                'n' => content_chars.push('\n')
+                't' => content_chars.push('\t')
+                'r' => content_chars.push('\r')
+                'b' => content_chars.push('\u{0008}')
+                'f' => content_chars.push('\u{000C}')
+                '0' => content_chars.push('\u{0000}')
+                _ => {
+                    // 未知转义序列, 保留原字符
+                    content_chars.push('\\')
+                    content_chars.push(esc)
+                }
+            }
+            self.advance()
+        } else if c == '"' {
+            // 闭合双引号
+            self.advance()
+            return Ok(String::from_array(content_chars))
+        } else if c == '\n' || c == '\r' {
+            // 双引号字符串不能跨行(简单实现)
+            return Err(LexError(
+                line=start_line,
+                col=start_col,
+                msg="双引号字符串不能跨行"
+            ))
+        } else {
+            content_chars.push(c)
+            self.advance()
+        }
+    }
+
+    Err(LexError(
+        line=start_line,
+        col=start_col,
+        msg="双引号字符串未闭合"
+    ))
+}
+
+///|
+/// 读取单引号字符串(字面量, 仅 '' 表示一个单引号)
+fn Lexer::read_single_quoted(self: Lexer) -> Result[String, YamlError] {
+    let start_line = self.line.val
+    let start_col = self.col.val
+    // 跳过开头的单引号
+    self.advance()
+    let content_chars: Array[Char] = []
+
+    while self.pos.val < self.len {
+        let c = self.current_char()
+        if c == '\'' {
+            self.advance()
+            if self.pos.val < self.len && self.current_char() == '\'' {
+                // '' 转义为一个单引号
+                content_chars.push('\'')
+                self.advance()
+            } else {
+                // 闭合单引号
+                return Ok(String::from_array(content_chars))
+            }
+        } else if c == '\n' || c == '\r' {
+            // 单引号字符串不能跨行(简单实现)
+            return Err(LexError(
+                line=start_line,
+                col=start_col,
+                msg="单引号字符串不能跨行"
+            ))
+        } else {
+            content_chars.push(c)
+            self.advance()
+        }
+    }
+
+    Err(LexError(
+        line=start_line,
+        col=start_col,
+        msg="单引号字符串未闭合"
+    ))
 }
