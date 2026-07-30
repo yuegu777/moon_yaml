@@ -45,6 +45,8 @@ fn Parser::parse(self: Parser) -> Result[Array[YamlValue], YamlError] {
             DocumentStart => {
                 self.advance()
                 self.skip_newlines()
+                // 新文档开始, 重置锚点表
+                self.anchors.val = Map::new()
                 match self.parse_document() {
                     Ok(doc) => docs.push(doc)
                     Err(e) => return Err(e)
@@ -52,6 +54,8 @@ fn Parser::parse(self: Parser) -> Result[Array[YamlValue], YamlError] {
             }
             Eof => break
             _ => {
+                // 新文档开始(隐式), 重置锚点表
+                self.anchors.val = Map::new()
                 match self.parse_document() {
                     Ok(doc) => docs.push(doc)
                     Err(e) => return Err(e)
@@ -75,6 +79,10 @@ fn Parser::parse_document(self: Parser) -> Result[YamlValue, YamlError] {
     match self.current_token() {
         DocumentEnd => {
             self.advance()
+            Ok(Null)
+        }
+        DocumentStart => {
+            // 遇到新的文档开始符, 当前文档为空
             Ok(Null)
         }
         Eof => Ok(Null)
