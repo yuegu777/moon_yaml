@@ -169,6 +169,41 @@ fn Lexer::scan(self: Lexer) -> Result[Array[TokenWithPos], YamlError] {
                 }
                 Err(e) => return Err(e)
             }
+        } else if c == '[' {
+            // 流序列开始
+            tokens.push({
+                token: FlowSequenceStart,
+                pos: { line: start_line, col: start_col }
+            })
+            self.advance()
+        } else if c == ']' {
+            // 流序列结束
+            tokens.push({
+                token: FlowSequenceEnd,
+                pos: { line: start_line, col: start_col }
+            })
+            self.advance()
+        } else if c == '{' {
+            // 流映射开始
+            tokens.push({
+                token: FlowMappingStart,
+                pos: { line: start_line, col: start_col }
+            })
+            self.advance()
+        } else if c == '}' {
+            // 流映射结束
+            tokens.push({
+                token: FlowMappingEnd,
+                pos: { line: start_line, col: start_col }
+            })
+            self.advance()
+        } else if c == ',' {
+            // 流元素分隔符
+            tokens.push({
+                token: Comma,
+                pos: { line: start_line, col: start_col }
+            })
+            self.advance()
         } else {
             match self.read_scalar() {
                 Ok(scalar) => {
@@ -306,12 +341,16 @@ fn Lexer::read_scalar(self: Lexer) -> Result[String, YamlError] {
         if c == '\n' || c == '\r' {
             break
         }
+        // 标量结束条件: 流样式分隔符
+        if c == '[' || c == ']' || c == '{' || c == '}' || c == ',' {
+            break
+        }
         // 标量结束条件: 冒号后跟空白(表示 key-value 分隔)
         if c == ':' {
             if self.pos.val + 1 < self.len {
                 let next_c = self.chars[self.pos.val + 1]
                 if next_c == ' ' || next_c == '\t' || next_c == '\n' ||
-                   next_c == '\r' {
+                   next_c == '\r' || next_c == '}' || next_c == ',' || next_c == ']' {
                     break
                 }
             } else {

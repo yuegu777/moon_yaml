@@ -118,6 +118,11 @@ fn Parser::parse_value(self: Parser, base_indent: Int) -> Result[YamlValue, Yaml
         Scalar(_) => self.parse_scalar_value()
         DoubleQuoted(_) => self.parse_quoted_string()
         SingleQuoted(_) => self.parse_quoted_string()
+        FlowSequenceStart => self.parse_flow_sequence()
+        FlowMappingStart => self.parse_flow_mapping()
+        FlowSequenceEnd => Ok(Null)  // 空序列
+        FlowMappingEnd => Ok(Null)   // 空映射
+        Comma => Ok(Null)            // 逗号分隔
         DocumentEnd => {
             self.advance()
             Ok(Null)
@@ -293,6 +298,204 @@ fn Parser::parse_quoted_string(self: Parser) -> Result[YamlValue, YamlError] {
                 line=pos.line,
                 col=pos.col,
                 msg="预期引号字符串"
+            ))
+        }
+    }
+}
+
+///|
+/// 解析流序列 [item1, item2, ...]
+fn Parser::parse_flow_sequence(self: Parser) -> Result[YamlValue, YamlError] {
+    // 消费 [
+    self.advance()
+    let items: Array[YamlValue] = []
+    self.depth.val = self.depth.val + 1
+
+    if self.depth.val >= self.config.max_depth {
+        self.depth.val = self.depth.val - 1
+        return Err(ParseError(
+            line=self.current_pos().line,
+            col=self.current_pos().col,
+            msg="嵌套深度超过最大限制"
+        ))
+    }
+
+    while self.pos.val < self.len {
+        self.skip_newlines()
+        // 跳过逗号
+        while self.pos.val < self.len && self.current_token() is Comma {
+            self.advance()
+            self.skip_newlines()
+        }
+
+        if self.pos.val >= self.len {
+            self.depth.val = self.depth.val - 1
+            return Err(ParseError(
+                line=self.current_pos().line,
+                col=self.current_pos().col,
+                msg="流序列未闭合"
+            ))
+        }
+
+        match self.current_token() {
+            FlowSequenceEnd => {
+                self.advance()
+                self.depth.val = self.depth.val - 1
+                return Ok(Array(items))
+            }
+            _ => {
+                // 流样式中, 使用 -1 作为 base_indent (不基于缩进判断结束)
+                match self.parse_flow_value() {
+                    Ok(value) => items.push(value)
+                    Err(e) => {
+                        self.depth.val = self.depth.val - 1
+                        return Err(e)
+                    }
+                }
+            }
+        }
+    }
+
+    self.depth.val = self.depth.val - 1
+    Err(ParseError(
+        line=self.current_pos().line,
+        col=self.current_pos().col,
+        msg="流序列未闭合"
+    ))
+}
+
+///|
+/// 解析流映射 {key: value, key2: value2, ...}
+fn Parser::parse_flow_mapping(self: Parser) -> Result[YamlValue, YamlError] {
+    // 消费 {
+    self.advance()
+    let mapping: Map[String, YamlValue] = Map::new()
+    self.depth.val = self.depth.val + 1
+
+    if self.depth.val >= self.config.max_depth {
+        self.depth.val = self.depth.val - 1
+        return Err(ParseError(
+            line=self.current_pos().line,
+            col=self.current_pos().col,
+            msg="嵌套深度超过最大限制"
+        ))
+    }
+
+    while self.pos.val < self.len {
+        self.skip_newlines()
+        // 跳过逗号
+        while self.pos.val < self.len && self.current_token() is Comma {
+            self.advance()
+            self.skip_newlines()
+        }
+
+        if self.pos.val >= self.len {
+            self.depth.val = self.depth.val - 1
+            return Err(ParseError(
+                line=self.current_pos().line,
+                col=self.current_pos().col,
+                msg="流映射未闭合"
+            ))
+        }
+
+        match self.current_token() {
+            FlowMappingEnd => {
+                self.advance()
+                self.depth.val = self.depth.val - 1
+                return Ok(Object(mapping))
+            }
+            Key(k) | Scalar(k) | DoubleQuoted(k) | SingleQuoted(k) => {
+                let key = k
+                self.advance()
+                self.skip_newlines()
+
+                // 期望冒号(ValueIndicator)
+                if self.pos.val >= self.len || not(self.current_token() is ValueIndicator) {
+                    self.depth.val = self.depth.val - 1
+                    return Err(ParseError(
+                        line=self.current_pos().line,
+                        col=self.current_pos().col,
+                        msg="流映射中 key 后期望 ':'"
+                    ))
+                }
+                self.advance() // 消费 :
+                self.skip_newlines()
+
+                match self.parse_flow_value() {
+                    Ok(value) => mapping.set(key, value)
+                    Err(e) => {
+                        self.depth.val = self.depth.val - 1
+                        return Err(e)
+                    }
+                }
+            }
+            _ => {
+                self.depth.val = self.depth.val - 1
+                return Err(ParseError(
+                    line=self.current_pos().line,
+                    col=self.current_pos().col,
+                    msg="流映射中预期 key"
+                ))
+            }
+        }
+    }
+
+    self.depth.val = self.depth.val - 1
+    Err(ParseError(
+        line=self.current_pos().line,
+        col=self.current_pos().col,
+        msg="流映射未闭合"
+    ))
+}
+
+///|
+/// 在流样式中解析值(忽略缩进, 但处理闭合括号)
+fn Parser::parse_flow_value(self: Parser) -> Result[YamlValue, YamlError] {
+    self.skip_newlines()
+
+    if self.pos.val >= self.len {
+        return Ok(Null)
+    }
+
+    match self.current_token() {
+        FlowSequenceStart => self.parse_flow_sequence()
+        FlowMappingStart => self.parse_flow_mapping()
+        Scalar(_) => self.parse_scalar_value()
+        DoubleQuoted(_) => self.parse_quoted_string()
+        SingleQuoted(_) => self.parse_quoted_string()
+        BlockEntry => {
+            // 流样式中 - 不是合法的
+            let pos = self.current_pos()
+            Err(ParseError(
+                line=pos.line,
+                col=pos.col,
+                msg="流样式中不支持块序列项 '-'"
+            ))
+        }
+        Key(_) => {
+            // Key token 意味着 key:value 但没有包含在 {} 中, 视为错误
+            let pos = self.current_pos()
+            Err(ParseError(
+                line=pos.line,
+                col=pos.col,
+                msg="流样式中意外的 key"
+            ))
+        }
+        FlowSequenceEnd | FlowMappingEnd | Comma => {
+            // 遇到闭合括号或逗号, 值为空
+            Ok(Null)
+        }
+        DocumentEnd => {
+            self.advance()
+            Ok(Null)
+        }
+        Eof => Ok(Null)
+        _ => {
+            let pos = self.current_pos()
+            Err(ParseError(
+                line=pos.line,
+                col=pos.col,
+                msg="流样式中意外的 Token"
             ))
         }
     }

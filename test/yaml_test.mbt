@@ -581,3 +581,175 @@ test "block_then_other_key" {
         Err(e) => fail!("解析失败")
     }
 }
+
+///|
+/// 测试流序列 [a, b, c]
+test "flow_sequence" {
+    let loader = @yaml.YamlLoader::new()
+    match loader.load_single("[apple, banana, cherry]") {
+        Ok(@yaml.Array(arr)) => {
+            if arr.length() != 3 {
+                fail!("流序列长度应为 3")
+            }
+            match arr[0] {
+                @yaml.String("apple") => ()
+                _ => fail!("第一项应为 apple")
+            }
+            match arr[1] {
+                @yaml.String("banana") => ()
+                _ => fail!("第二项应为 banana")
+            }
+        }
+        Ok(_) => fail!("预期 Array")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试空流序列 []
+test "empty_flow_sequence" {
+    let loader = @yaml.YamlLoader::new()
+    match loader.load_single("[]") {
+        Ok(@yaml.Array(arr)) => {
+            if arr.length() != 0 {
+                fail!("空流序列长度应为 0")
+            }
+        }
+        Ok(_) => fail!("预期 Array")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试流映射 {k: v, k2: v2}
+test "flow_mapping" {
+    let loader = @yaml.YamlLoader::new()
+    match loader.load_single("{name: Alice, age: 30}") {
+        Ok(@yaml.Object(obj)) => {
+            match obj.get("name") {
+                Some(@yaml.String("Alice")) => ()
+                _ => fail!("name 应为 Alice")
+            }
+            match obj.get("age") {
+                Some(@yaml.Int(30)) => ()
+                _ => fail!("age 应为 Int(30)")
+            }
+        }
+        Ok(_) => fail!("预期 Object")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试空流映射 {}
+test "empty_flow_mapping" {
+    let loader = @yaml.YamlLoader::new()
+    match loader.load_single("{}") {
+        Ok(@yaml.Object(obj)) => {
+            if obj.size() != 0 {
+                fail!("空流映射应为空")
+            }
+        }
+        Ok(_) => fail!("预期 Object")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试流样式嵌套 [[1,2],[3,4]]
+test "nested_flow_sequence" {
+    let loader = @yaml.YamlLoader::new()
+    match loader.load_single("[[1, 2], [3, 4]]") {
+        Ok(@yaml.Array(arr)) => {
+            if arr.length() != 2 {
+                fail!("外层序列长度应为 2")
+            }
+        }
+        Ok(_) => fail!("预期 Array")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试流序列包含不同类型值
+test "flow_sequence_mixed_types" {
+    let loader = @yaml.YamlLoader::new()
+    match loader.load_single("[1, true, null, hello]") {
+        Ok(@yaml.Array(arr)) => {
+            if arr.length() != 4 {
+                fail!("序列长度应为 4")
+            }
+            match arr[0] {
+                @yaml.Int(1) => ()
+                _ => fail!("第一项应为 Int(1)")
+            }
+            match arr[1] {
+                @yaml.Bool(true) => ()
+                _ => fail!("第二项应为 Bool(true)")
+            }
+            match arr[2] {
+                @yaml.Null => ()
+                _ => fail!("第三项应为 Null")
+            }
+            match arr[3] {
+                @yaml.String("hello") => ()
+                _ => fail!("第四项应为 String(hello)")
+            }
+        }
+        Ok(_) => fail!("预期 Array")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试块映射中使用流值(常用场景)
+test "block_mapping_with_flow_values" {
+    let loader = @yaml.YamlLoader::new()
+    let input = "name: test\ntags: [a, b, c]\nmeta: {x: 1, y: 2}"
+    match loader.load_single(input) {
+        Ok(@yaml.Object(obj)) => {
+            match obj.get("name") {
+                Some(@yaml.String("test")) => ()
+                _ => fail!("name 应为 test")
+            }
+            match obj.get("tags") {
+                Some(@yaml.Array(tags)) => {
+                    if tags.length() != 3 {
+                        fail!("tags 长度应为 3")
+                    }
+                }
+                _ => fail!("tags 应为 Array")
+            }
+            match obj.get("meta") {
+                Some(@yaml.Object(_)) => ()
+                _ => fail!("meta 应为 Object")
+            }
+        }
+        Ok(_) => fail!("预期 Object")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试块序列中使用流值
+test "block_sequence_with_flow_values" {
+    let loader = @yaml.YamlLoader::new()
+    let input = "- [1, 2]\n- {a: 3}"
+    match loader.load_single(input) {
+        Ok(@yaml.Array(arr)) => {
+            if arr.length() != 2 {
+                fail!("序列长度应为 2")
+            }
+            match arr[0] {
+                @yaml.Array(_) => ()
+                _ => fail!("第一项应为 Array")
+            }
+            match arr[1] {
+                @yaml.Object(_) => ()
+                _ => fail!("第二项应为 Object")
+            }
+        }
+        Ok(_) => fail!("预期 Array")
+        Err(e) => fail!("解析失败")
+    }
+}

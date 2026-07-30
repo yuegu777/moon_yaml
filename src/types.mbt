@@ -52,6 +52,11 @@ pub enum Token {
     Scalar(String)
     DoubleQuoted(String)
     SingleQuoted(String)
+    FlowSequenceStart
+    FlowSequenceEnd
+    FlowMappingStart
+    FlowMappingEnd
+    Comma
     NewLine
     Eof
 }
