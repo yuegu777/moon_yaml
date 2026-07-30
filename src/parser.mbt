@@ -12,6 +12,7 @@ struct Parser {
     pos: Ref[Int]
     len: Int
     depth: Ref[Int]
+    anchors: Ref[Map[String, YamlValue]]
     config: ParserConfig
 }
 
@@ -23,6 +24,7 @@ fn Parser::new(tokens: Array[TokenWithPos], config: ParserConfig) -> Parser {
         pos: { val: 0 },
         len: tokens.length(),
         depth: { val: 0 },
+        anchors: { val: Map::new() },
         config: config
     }
 }
@@ -98,6 +100,50 @@ fn Parser::parse_value(self: Parser, base_indent: Int) -> Result[YamlValue, Yaml
         return Ok(Null)
     }
 
+    // 先处理别名
+    if self.current_token() is Alias(_) {
+        return self.parse_alias()
+    }
+
+    // 检查是否有锚点
+    let anchor_name = if self.current_token() is Anchor(_) {
+        match self.current_token() {
+            Anchor(name) => {
+                self.advance()
+                Some(name)
+            }
+            _ => None
+        }
+    } else {
+        None
+    }
+
+    // 递归解析值(锚点后的值)
+    let value_result = self.parse_value_inner(base_indent)
+    match value_result {
+        Ok(value) => {
+            // 如果有锚点, 注册到锚点表
+            match anchor_name {
+                Some(name) => {
+                    self.anchors.val.set(name, value)
+                    Ok(value)
+                }
+                None => Ok(value)
+            }
+        }
+        Err(e) => Err(e)
+    }
+}
+
+///|
+/// 内部值解析(处理锚点后调用)
+fn Parser::parse_value_inner(self: Parser, base_indent: Int) -> Result[YamlValue, YamlError] {
+    self.skip_newlines()
+
+    if self.pos.val >= self.len {
+        return Ok(Null)
+    }
+
     match self.current_token() {
         BlockEntry => {
             let entry_col = self.current_pos().col
@@ -128,6 +174,13 @@ fn Parser::parse_value(self: Parser, base_indent: Int) -> Result[YamlValue, Yaml
             Ok(Null)
         }
         Eof => Ok(Null)
+        Anchor(_) => {
+            // 多个锚点(不常见, 但允许, 递归处理)
+            self.parse_value(base_indent)
+        }
+        Alias(_) => {
+            self.parse_alias()
+        }
         _ => {
             let pos = self.current_pos()
             Err(ParseError(
@@ -136,6 +189,30 @@ fn Parser::parse_value(self: Parser, base_indent: Int) -> Result[YamlValue, Yaml
                 msg="意外的 Token"
             ))
         }
+    }
+}
+
+///|
+/// 解析别名引用
+fn Parser::parse_alias(self: Parser) -> Result[YamlValue, YamlError] {
+    let pos = self.current_pos()
+    match self.current_token() {
+        Alias(name) => {
+            self.advance()
+            match self.anchors.val.get(name) {
+                Some(value) => Ok(value)
+                None => Err(ParseError(
+                    line=pos.line,
+                    col=pos.col,
+                    msg="未找到锚点: " + name
+                ))
+            }
+        }
+        _ => Err(ParseError(
+            line=pos.line,
+            col=pos.col,
+            msg="预期别名"
+        ))
     }
 }
 
@@ -457,6 +534,49 @@ fn Parser::parse_flow_value(self: Parser) -> Result[YamlValue, YamlError] {
         return Ok(Null)
     }
 
+    // 先处理别名
+    if self.current_token() is Alias(_) {
+        return self.parse_alias()
+    }
+
+    // 检查是否有锚点
+    let anchor_name = if self.current_token() is Anchor(_) {
+        match self.current_token() {
+            Anchor(name) => {
+                self.advance()
+                Some(name)
+            }
+            _ => None
+        }
+    } else {
+        None
+    }
+
+    // 递归解析流值
+    let value_result = self.parse_flow_value_inner()
+    match value_result {
+        Ok(value) => {
+            match anchor_name {
+                Some(name) => {
+                    self.anchors.val.set(name, value)
+                    Ok(value)
+                }
+                None => Ok(value)
+            }
+        }
+        Err(e) => Err(e)
+    }
+}
+
+///|
+/// 流样式内部值解析
+fn Parser::parse_flow_value_inner(self: Parser) -> Result[YamlValue, YamlError] {
+    self.skip_newlines()
+
+    if self.pos.val >= self.len {
+        return Ok(Null)
+    }
+
     match self.current_token() {
         FlowSequenceStart => self.parse_flow_sequence()
         FlowMappingStart => self.parse_flow_mapping()
@@ -488,6 +608,13 @@ fn Parser::parse_flow_value(self: Parser) -> Result[YamlValue, YamlError] {
         DocumentEnd => {
             self.advance()
             Ok(Null)
+        }
+        Anchor(_) => {
+            // 递归处理锚点
+            self.parse_flow_value()
+        }
+        Alias(_) => {
+            self.parse_alias()
         }
         Eof => Ok(Null)
         _ => {

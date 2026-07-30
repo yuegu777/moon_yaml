@@ -204,6 +204,30 @@ fn Lexer::scan(self: Lexer) -> Result[Array[TokenWithPos], YamlError] {
                 pos: { line: start_line, col: start_col }
             })
             self.advance()
+        } else if c == '&' {
+            // 锚点 &name
+            self.advance()
+            match self.read_anchor_name() {
+                Ok(name) => {
+                    tokens.push({
+                        token: Anchor(name),
+                        pos: { line: start_line, col: start_col }
+                    })
+                }
+                Err(e) => return Err(e)
+            }
+        } else if c == '*' {
+            // 别名 *name
+            self.advance()
+            match self.read_anchor_name() {
+                Ok(name) => {
+                    tokens.push({
+                        token: Alias(name),
+                        pos: { line: start_line, col: start_col }
+                    })
+                }
+                Err(e) => return Err(e)
+            }
         } else {
             match self.read_scalar() {
                 Ok(scalar) => {
@@ -735,4 +759,33 @@ fn Lexer::read_block_content(self: Lexer, chomp: Int, is_literal: Bool) -> Resul
     }
 
     Ok(result)
+}
+
+///|
+/// 读取锚点/别名名称(字母、数字、下划线、连字符)
+fn Lexer::read_anchor_name(self: Lexer) -> Result[String, YamlError] {
+    let start_line = self.line.val
+    let start_col = self.col.val
+    let name_chars: Array[Char] = []
+
+    while self.pos.val < self.len {
+        let c = self.current_char()
+        if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9') || c == '_' || c == '-' {
+            name_chars.push(c)
+            self.advance()
+        } else {
+            break
+        }
+    }
+
+    if name_chars.length() == 0 {
+        return Err(LexError(
+            line=start_line,
+            col=start_col,
+            msg="锚点/别名名称不能为空"
+        ))
+    }
+
+    Ok(String::from_array(name_chars))
 }

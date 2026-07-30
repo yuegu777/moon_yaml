@@ -57,6 +57,8 @@ pub enum Token {
     FlowMappingStart
     FlowMappingEnd
     Comma
+    Anchor(String)
+    Alias(String)
     NewLine
     Eof
 }

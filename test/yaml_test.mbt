@@ -753,3 +753,94 @@ test "block_sequence_with_flow_values" {
         Err(e) => fail!("解析失败")
     }
 }
+
+///|
+/// 测试简单标量锚点和别名
+test "simple_anchor_alias" {
+    let loader = @yaml.YamlLoader::new()
+    let input = "defaults: &def hello\noverride: *def"
+    match loader.load_single(input) {
+        Ok(@yaml.Object(obj)) => {
+            match obj.get("defaults") {
+                Some(@yaml.String("hello")) => ()
+                _ => fail!("defaults 应为 hello")
+            }
+            match obj.get("override") {
+                Some(@yaml.String("hello")) => ()
+                _ => fail!("override 应为 hello (别名引用)")
+            }
+        }
+        Ok(_) => fail!("预期 Object")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试序列中的别名
+test "alias_in_sequence" {
+    let loader = @yaml.YamlLoader::new()
+    let input = "- &item value1\n- *item\n- value2"
+    match loader.load_single(input) {
+        Ok(@yaml.Array(arr)) => {
+            if arr.length() != 3 {
+                fail!("序列长度应为 3")
+            }
+            match arr[0] {
+                @yaml.String("value1") => ()
+                _ => fail!("第一项应为 value1")
+            }
+            match arr[1] {
+                @yaml.String("value1") => ()
+                _ => fail!("第二项应为 value1 (别名引用)")
+            }
+            match arr[2] {
+                @yaml.String("value2") => ()
+                _ => fail!("第三项应为 value2")
+            }
+        }
+        Ok(_) => fail!("预期 Array")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试锚点引用整数
+test "anchor_alias_int" {
+    let loader = @yaml.YamlLoader::new()
+    let input = "a: &num 42\nb: *num"
+    match loader.load_single(input) {
+        Ok(@yaml.Object(obj)) => {
+            match obj.get("a") {
+                Some(@yaml.Int(42)) => ()
+                _ => fail!("a 应为 Int(42)")
+            }
+            match obj.get("b") {
+                Some(@yaml.Int(42)) => ()
+                _ => fail!("b 应为 Int(42)")
+            }
+        }
+        Ok(_) => fail!("预期 Object")
+        Err(e) => fail!("解析失败")
+    }
+}
+
+///|
+/// 测试流样式中的别名
+test "alias_in_flow" {
+    let loader = @yaml.YamlLoader::new()
+    let input = "first: &base [1, 2, 3]\nnext: *base"
+    match loader.load_single(input) {
+        Ok(@yaml.Object(obj)) => {
+            match obj.get("next") {
+                Some(@yaml.Array(arr)) => {
+                    if arr.length() != 3 {
+                        fail!("引用的数组长度应为 3")
+                    }
+                }
+                _ => fail!("next 应为 Array")
+            }
+        }
+        Ok(_) => fail!("预期 Object")
+        Err(e) => fail!("解析失败")
+    }
+}
