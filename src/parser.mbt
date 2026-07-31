@@ -24,7 +24,7 @@ fn Parser::new(tokens : Array[TokenWithPos], config : ParserConfig) -> Parser {
     pos: { val: 0 },
     len: tokens.length(),
     depth: { val: 0 },
-    anchors: { val: Map::new() },
+    anchors: { val: Map([]) },
     config,
   }
 }
@@ -43,7 +43,7 @@ fn Parser::parse(self : Parser) -> Result[Array[YamlValue], YamlError] {
         self.advance()
         self.skip_newlines()
         // 新文档开始, 重置锚点表
-        self.anchors.val = Map::new()
+        self.anchors.val = Map([])
         match self.parse_document() {
           Ok(doc) => docs.push(doc)
           Err(e) => return Err(e)
@@ -52,7 +52,7 @@ fn Parser::parse(self : Parser) -> Result[Array[YamlValue], YamlError] {
       Eof => break
       _ => {
         // 新文档开始(隐式), 重置锚点表
-        self.anchors.val = Map::new()
+        self.anchors.val = Map([])
         match self.parse_document() {
           Ok(doc) => docs.push(doc)
           Err(e) => return Err(e)
@@ -294,7 +294,7 @@ fn Parser::parse_mapping_value(
   base_indent : Int,
   key_col : Int
 ) -> Result[YamlValue, YamlError] {
-  let mapping : Map[String, YamlValue] = Map::new()
+  let mapping : Map[String, YamlValue] = Map([])
   self.depth.val = self.depth.val + 1
   while self.pos.val < self.len {
     self.skip_newlines()
@@ -469,7 +469,7 @@ fn Parser::parse_flow_sequence(self : Parser) -> Result[YamlValue, YamlError] {
 fn Parser::parse_flow_mapping(self : Parser) -> Result[YamlValue, YamlError] {
   // 消费 {
   self.advance()
-  let mapping : Map[String, YamlValue] = Map::new()
+  let mapping : Map[String, YamlValue] = Map([])
   self.depth.val = self.depth.val + 1
   if self.depth.val >= self.config.max_depth {
     self.depth.val = self.depth.val - 1
@@ -511,7 +511,7 @@ fn Parser::parse_flow_mapping(self : Parser) -> Result[YamlValue, YamlError] {
 
         // 期望冒号(ValueIndicator)
         if self.pos.val >= self.len ||
-          not(self.current_token() is ValueIndicator) {
+          !(self.current_token() is ValueIndicator) {
           self.depth.val = self.depth.val - 1
           return Err(
             ParseError(
@@ -660,7 +660,7 @@ fn Parser::parse_flow_value_inner(
 ///|
 /// 标量类型推断(Core Schema)
 fn Parser::resolve_scalar(self : Parser, s : String) -> YamlValue {
-  let trimmed = s.trim_space().to_string()
+  let trimmed = s.trim().to_owned()
 
   // 空字符串也视为 null? 不, 空字符串是 String("")
   // 但如果 trim 后为空且原字符串 trim 后为空, 可能是空值场景
@@ -740,7 +740,7 @@ fn Parser::parse_int(_ : Parser, s : String) -> Int? {
     let c = chars[i]
     if c == '_' {
       // 下划线不能在开头或结尾, 不能连续
-      if not(has_digits) || i == chars.length() - 1 {
+      if !(has_digits) || i == chars.length() - 1 {
         return None
       }
       i = i + 1
@@ -753,7 +753,7 @@ fn Parser::parse_int(_ : Parser, s : String) -> Int? {
     has_digits = true
     i = i + 1
   }
-  if not(has_digits) {
+  if !(has_digits) {
     return None
   }
   if negative {
@@ -775,7 +775,7 @@ fn parse_hex(s : String, start : Int, negative : Bool) -> Int? {
   while i < chars.length() {
     let c = chars[i]
     if c == '_' {
-      if not(has_digits) || i == chars.length() - 1 {
+      if !(has_digits) || i == chars.length() - 1 {
         return None
       }
       i = i + 1
@@ -794,7 +794,7 @@ fn parse_hex(s : String, start : Int, negative : Bool) -> Int? {
     has_digits = true
     i = i + 1
   }
-  if not(has_digits) {
+  if !(has_digits) {
     return None
   }
   if negative {
@@ -816,7 +816,7 @@ fn parse_oct(s : String, start : Int, negative : Bool) -> Int? {
   while i < chars.length() {
     let c = chars[i]
     if c == '_' {
-      if not(has_digits) || i == chars.length() - 1 {
+      if !(has_digits) || i == chars.length() - 1 {
         return None
       }
       i = i + 1
@@ -829,7 +829,7 @@ fn parse_oct(s : String, start : Int, negative : Bool) -> Int? {
     has_digits = true
     i = i + 1
   }
-  if not(has_digits) {
+  if !(has_digits) {
     return None
   }
   if negative {
@@ -851,7 +851,7 @@ fn parse_bin(s : String, start : Int, negative : Bool) -> Int? {
   while i < chars.length() {
     let c = chars[i]
     if c == '_' {
-      if not(has_digits) || i == chars.length() - 1 {
+      if !(has_digits) || i == chars.length() - 1 {
         return None
       }
       i = i + 1
@@ -864,7 +864,7 @@ fn parse_bin(s : String, start : Int, negative : Bool) -> Int? {
     has_digits = true
     i = i + 1
   }
-  if not(has_digits) {
+  if !(has_digits) {
     return None
   }
   if negative {
@@ -951,7 +951,7 @@ fn Parser::parse_float(_ : Parser, s : String) -> Double? {
       has_dot = true
     } else if c >= '0' && c <= '9' {
       let digit = c.to_int() - '0'.to_int()
-      if not(has_dot) {
+      if !(has_dot) {
         int_part = int_part * 10 + digit
         has_int_digits = true
       } else {
@@ -966,11 +966,11 @@ fn Parser::parse_float(_ : Parser, s : String) -> Double? {
   }
 
   // 必须有小数点, 且整数部分或小数部分至少有一个有数字
-  if not(has_dot) {
+  if !(has_dot) {
     return None
   }
   // 不允许只有一个 "." (如 "." 或 "+." 或 "-.")
-  if not(has_int_digits) && not(has_frac_digits) {
+  if !(has_int_digits) && !(has_frac_digits) {
     return None
   }
   let mut result = int_part.to_double() + frac_value
@@ -1013,7 +1013,7 @@ fn parse_float_sci(
   while i < chs.length() {
     let c = chs[i]
     if c == '_' {
-      if not(has_exp_digits) || i == chs.length() - 1 {
+      if !(has_exp_digits) || i == chs.length() - 1 {
         return None
       }
       i = i + 1
@@ -1026,7 +1026,7 @@ fn parse_float_sci(
     has_exp_digits = true
     i = i + 1
   }
-  if not(has_exp_digits) {
+  if !(has_exp_digits) {
     return None
   }
 
@@ -1054,7 +1054,7 @@ fn parse_float_sci(
       has_dot = true
     } else if c >= '0' && c <= '9' {
       let digit = c.to_int() - '0'.to_int()
-      if not(has_dot) {
+      if !(has_dot) {
         int_part = int_part * 10 + digit
         has_int_digits = true
       } else {
@@ -1067,7 +1067,7 @@ fn parse_float_sci(
     }
     i = i + 1
   }
-  if not(has_int_digits) && not(has_frac_digits) {
+  if !(has_int_digits) && !(has_frac_digits) {
     return None
   }
   let mut mantissa = int_part.to_double() + frac_value

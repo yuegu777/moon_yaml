@@ -118,7 +118,7 @@ fn Emitter::needs_quotes(self : Emitter, s : String) -> Bool {
     first == '[' {
     return true
   }
-  let trimmed = s.trim_space().to_string()
+  let trimmed = s.trim().to_owned()
   if trimmed.length() == 0 {
     return true
   }
@@ -242,7 +242,7 @@ fn Emitter::looks_like_number(_ : Emitter, s : String) -> Bool {
       }
       has_dot = true
     } else if c == 'e' || c == 'E' {
-      if has_exp || not(has_digits) {
+      if has_exp || !has_digits {
         return false
       }
       has_exp = true

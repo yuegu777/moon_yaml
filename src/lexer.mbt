@@ -378,7 +378,7 @@ fn Lexer::read_scalar(self : Lexer) -> Result[String, YamlError] {
   if scalar_chars.length() == 0 {
     return Err(LexError(line=start_line, col=start_col, msg="空的标量值"))
   }
-  Ok(String::from_array(scalar_chars).trim_space().to_string())
+  Ok(String::from_array(scalar_chars).trim().to_owned())
 }
 
 ///|
@@ -672,7 +672,7 @@ fn Lexer::read_block_content(
     } else {
       // 去掉前导 content_indent 个空格
       let line_after_indent = if raw_line.length() > content_indent {
-        raw_line.substring(start=content_indent)
+        raw_line[content_indent:].to_owned()
       } else {
         ""
       }
@@ -716,13 +716,13 @@ fn Lexer::read_block_content(
       let line = content_lines[i]
       if line == "" {
         // 空行表示段落分隔
-        if s.length() > 0 && not(s.has_suffix("\n")) {
+        if s.length() > 0 && !s.has_suffix("\n") {
           s = s + "\n"
         }
         s = s + "\n"
         prev_empty = true
       } else {
-        if s.length() > 0 && not(prev_empty) && not(s.has_suffix("\n")) {
+        if s.length() > 0 && !prev_empty && !s.has_suffix("\n") {
           s = s + " "
         }
         s = s + line
