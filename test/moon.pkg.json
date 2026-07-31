@@ -1,6 +1,6 @@
 {
     "is-main": false,
-    "import": [
+    "test-import": [
         {
             "path": "yuegu777/moon_yaml/src",
             "alias": "yaml"

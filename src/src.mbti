@@ -1,0 +1,90 @@
+package "yuegu777/moon_yaml/src"
+
+// Values
+fn emit_yaml(YamlValue) -> String
+
+fn parse_yaml(String) -> Result[Array[YamlValue], YamlError]
+
+// Types and methods
+pub(all) struct ParserConfig {
+  strict : Bool
+  max_depth : Int
+}
+impl ParserConfig {
+  default() -> Self
+}
+
+pub enum Token {
+  DocumentStart
+  DocumentEnd
+  Key(String)
+  ValueIndicator
+  BlockEntry
+  Scalar(String)
+  DoubleQuoted(String)
+  SingleQuoted(String)
+  FlowSequenceStart
+  FlowSequenceEnd
+  FlowMappingStart
+  FlowMappingEnd
+  Comma
+  Anchor(String)
+  Alias(String)
+  NewLine
+  Eof
+}
+
+pub(all) struct TokenPos {
+  line : Int
+  col : Int
+}
+
+pub(all) struct TokenWithPos {
+  token : Token
+  pos : TokenPos
+}
+
+pub struct YamlEmitter {
+  indent_size : Int
+}
+impl YamlEmitter {
+  emit(Self, YamlValue) -> String
+  emit_documents(Self, Array[YamlValue]) -> String
+  new() -> Self
+  with_indent(Self, Int) -> Self
+}
+
+pub(all) enum YamlError {
+  LexError(line~ : Int, col~ : Int, msg~ : String)
+  ParseError(line~ : Int, col~ : Int, msg~ : String)
+  UnexpectedToken(expected~ : String, got~ : String)
+  UnsupportedFeature(feature~ : String)
+}
+impl YamlError {
+  to_string(Self) -> String
+}
+
+pub struct YamlLoader {
+  config : ParserConfig
+}
+impl YamlLoader {
+  load_from_str(Self, String) -> Result[Array[YamlValue], YamlError]
+  load_single(Self, String) -> Result[YamlValue, YamlError]
+  new() -> Self
+  with_config(Self, ParserConfig) -> Self
+}
+
+pub(all) enum YamlValue {
+  Null
+  Bool(Bool)
+  Int(Int)
+  Double(Double)
+  String(String)
+  Array(Array[YamlValue])
+  Object(Map[String, YamlValue])
+}
+
+// Type aliases
+
+// Traits
+
