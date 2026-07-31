@@ -1,5 +1,7 @@
 # MoonBit 构建产物
-/target/
+_build/
+target_backup_*/
+*.generated.mbti
 
 # IDE 配置
 .idea/
